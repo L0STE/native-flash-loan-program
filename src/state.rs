@@ -67,8 +67,8 @@ impl Config {
     }
 
     #[inline(always)]
-    pub fn set_locked(&mut self, locked: bool) {
-        self.locked = locked;
+    pub fn set_locked(&mut self) {
+        self.locked = !self.locked;
     }
 
     #[inline(always)]

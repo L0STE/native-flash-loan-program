@@ -7,5 +7,8 @@ pub use deposit::*;
 pub mod withdraw;
 pub use withdraw::*;
 
+pub mod update_config;
+pub use update_config::*;
+
 pub mod helpers;
 pub use helpers::*;
