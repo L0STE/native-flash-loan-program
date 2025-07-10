@@ -11,10 +11,8 @@ perf = []
 crate-type = ["lib", "cdylib"]
 
 [dependencies]
-pinocchio = { version = "0.7.1", features = ["std"] }
-pinocchio-associated-token-account = "0.1.0"
-pinocchio-system = "0.2.1"
-pinocchio-token = "0.2.1"
-solana-nostd-keccak = "0.1.3"
-constant-product-curve = { git = "https://github.com/deanmlittle/constant-product-curve.git" }
+pinocchio = "0.8.4"
+pinocchio-associated-token-account = "0.1.1"
+pinocchio-system = "0.2.3"
+pinocchio-token = "0.3.0"
 

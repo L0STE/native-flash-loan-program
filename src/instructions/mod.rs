@@ -1,17 +1,8 @@
-pub mod initialize;
-pub use initialize::*;
+pub mod loan;
+pub use loan::*;
 
-pub mod deposit;
-pub use deposit::*;
-
-pub mod withdraw;
-pub use withdraw::*;
-
-pub mod swap;
-pub use swap::*;
-
-pub mod update_config;
-pub use update_config::*;
+pub mod repay;
+pub use repay::*;
 
 pub mod helpers;
 pub use helpers::*;

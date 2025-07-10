@@ -4,12 +4,6 @@ entrypoint!(process_instruction);
 pub mod instructions;
 pub use instructions::*;
 
-pub mod state;
-pub use state::*;
-
-pub mod error;
-pub use error::*;
-
 // 22222222222222222222222222222222222222222222
 pub const ID: Pubkey = [
     0x0f, 0x1e, 0x6b, 0x14, 0x21, 0xc0, 0x4a, 0x07, 
@@ -24,9 +18,8 @@ fn process_instruction(
     instruction_data: &[u8],
 ) -> ProgramResult {
     match instruction_data.split_first() {
-        Some((Initialize::DISCRIMINATOR, data)) => Initialize::try_from((data, accounts))?.process(),
-        Some((Deposit::DISCRIMINATOR, data)) => Deposit::try_from((data, accounts))?.process(),
-        Some((Withdraw::DISCRIMINATOR, data)) => Withdraw::try_from((data, accounts))?.process(),
+        Some((Loan::DISCRIMINATOR, data)) => Loan::try_from((data, accounts))?.process(),
+        Some((Repay::DISCRIMINATOR, _)) => Repay::try_from(accounts)?.process(),
         _ => Err(ProgramError::InvalidInstructionData)
     }
 }
