@@ -83,7 +83,7 @@ impl<'a> Repay<'a> {
             return Err(ProgramError::InvalidInstructionData);
         }
 
-        if self.accounts.loan_data.len() * 2 != u16::from_le_bytes(unsafe { *(instruction.raw as *const [u8; 2]) }) as usize - 4{
+        if self.accounts.loan_data.len() * 2 != unsafe { *(instruction.raw as *const u16) as usize - 4} {
             return Err(ProgramError::InvalidAccountData);
         }
 

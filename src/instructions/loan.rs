@@ -1,11 +1,12 @@
 use pinocchio::instruction::{Seed, Signer};
 use pinocchio::pubkey::try_find_program_address;
+use pinocchio::sysvars::instructions::Instructions;
 use pinocchio::{account_info::AccountInfo, program_error::ProgramError, ProgramResult};
 use pinocchio_token::instructions::Transfer;
 use core::mem::size_of;
 use core::mem::MaybeUninit;
 
-use crate::{LoanData, ID, MAX_LOAN_PAIRS};
+use crate::{LoanData, Repay, ID, MAX_LOAN_PAIRS};
 
 /// #Loan
 /// 
@@ -116,8 +117,6 @@ impl<'a> TryFrom<(&'a [u8], &'a [AccountInfo])> for Loan<'a> {
 
         let (_, bump) = try_find_program_address(&[b"auth"], &ID).ok_or(ProgramError::InvalidAccountData)?;
 
-        // Instruction Sysvar to do
-
         // Return the initialized struct
         Ok(Self {
             accounts,
@@ -144,6 +143,20 @@ impl<'a> Loan<'a> {
                 authority: self.accounts.protocol,
                 amount: *amount,
             }.invoke_signed(&signer_seeds)?;
+        }
+
+        // Introspecting the Repay instruction
+        let num_instructions = unsafe { *(self.accounts.instruction_sysvar.try_borrow_data()?.as_ptr() as *const u16) };
+
+        let instruction_sysvar = unsafe { Instructions::new_unchecked(self.accounts.instruction_sysvar.try_borrow_data()?) };        
+        let instruction = instruction_sysvar.load_instruction_at(num_instructions as usize - 1)?;
+
+        if instruction.get_program_id() != &crate::ID {
+            return Err(ProgramError::InvalidInstructionData);
+        }
+
+        if instruction.get_instruction_data().as_ptr() as *const u8 != Repay::DISCRIMINATOR {
+            return Err(ProgramError::InvalidInstructionData);
         }
         
         Ok(())
