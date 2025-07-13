@@ -5,7 +5,6 @@ use pinocchio::{account_info::AccountInfo, program_error::ProgramError, ProgramR
 use pinocchio_token::instructions::Transfer;
 use core::mem::size_of;
 use core::mem::MaybeUninit;
-
 use crate::{LoanData, Repay, ID, MAX_LOAN_PAIRS};
 
 /// #Loan
@@ -38,12 +37,12 @@ impl<'a> TryFrom<&'a [AccountInfo]> for LoanAccounts<'a> {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
 
-        if rest.len() % 2 != 0 || rest.len() / 2 > MAX_LOAN_PAIRS || rest.len() > 2 {
+        if rest.len() % 2 != 0 || rest.len() / 2 > MAX_LOAN_PAIRS || rest.len() < 2 {
             return Err(ProgramError::InvalidAccountData);
         }
 
         let mut loan_data_array: [MaybeUninit<LoanData<'a>>; MAX_LOAN_PAIRS] = [MaybeUninit::uninit(); MAX_LOAN_PAIRS];
-        
+
         for (i, chunk) in rest.chunks(2).enumerate() {
             loan_data_array[i] = MaybeUninit::new(LoanData {
                 protocol_token_accounts: &chunk[0],
@@ -51,11 +50,10 @@ impl<'a> TryFrom<&'a [AccountInfo]> for LoanAccounts<'a> {
             });
         }
         
-        // Convert the MaybeUninit array to initialized slice
         let loan_data = unsafe {
             core::slice::from_raw_parts(
                 loan_data_array.as_ptr() as *const LoanData<'a>,
-                rest.len()
+                rest.len() / 2
             )
         };
 
@@ -81,16 +79,10 @@ impl<'a> TryFrom<&'a [u8]> for LoanInstructionData<'a> {
             return Err(ProgramError::InvalidInstructionData);
         }
 
-        let mut amounts_data_array: [MaybeUninit<u64>; MAX_LOAN_PAIRS] = [MaybeUninit::uninit(); MAX_LOAN_PAIRS];
-
-        for (i, chunk) in data.chunks(size_of::<u64>()).enumerate() {
-            amounts_data_array[i] = MaybeUninit::new(u64::from_le_bytes(chunk.try_into().unwrap()));
-        }
-
-        let amounts = unsafe {
+        let amounts: &[u64] = unsafe {
             core::slice::from_raw_parts(
-                amounts_data_array.as_ptr() as *const u64,
-                data.len()
+                data.as_ptr() as *const u64,
+                data.len() / size_of::<u64>()
             )
         };
 

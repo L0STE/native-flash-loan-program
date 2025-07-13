@@ -3,9 +3,9 @@ use pinocchio_token::instructions::Transfer;
 use core::mem::MaybeUninit;
 use crate::{LoanData, FEE, MAX_LOAN_PAIRS};
 
-/// #Loan
+/// #Repay
 /// 
-/// Loan tokens from the protocol
+/// Repay tokens to the protocol
 /// 
 /// Accounts:
 /// 
@@ -28,12 +28,12 @@ impl<'a> TryFrom<&'a [AccountInfo]> for RepayAccounts<'a> {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
 
-        if rest.len() % 2 != 0 || rest.len() / 2 > MAX_LOAN_PAIRS || rest.len() > 2 {
+        if rest.len() % 2 != 0 || rest.len() / 2 > MAX_LOAN_PAIRS || rest.len() < 2 {
             return Err(ProgramError::InvalidAccountData);
         }
 
         let mut loan_data_array: [MaybeUninit<LoanData<'a>>; MAX_LOAN_PAIRS] = [MaybeUninit::uninit(); MAX_LOAN_PAIRS];
-        
+
         for (i, chunk) in rest.chunks(2).enumerate() {
             loan_data_array[i] = MaybeUninit::new(LoanData {
                 protocol_token_accounts: &chunk[0],
@@ -41,11 +41,10 @@ impl<'a> TryFrom<&'a [AccountInfo]> for RepayAccounts<'a> {
             });
         }
         
-        // Convert the MaybeUninit array to initialized slice
         let loan_data = unsafe {
             core::slice::from_raw_parts(
                 loan_data_array.as_ptr() as *const LoanData<'a>,
-                rest.len()
+                rest.len() / 2
             )
         };
 
@@ -89,23 +88,32 @@ impl<'a> Repay<'a> {
 
         let instruction_data = instruction.get_instruction_data();
 
-        for (i, loan_data) in self.accounts.loan_data.iter().enumerate() {
-            if loan_data.protocol_token_accounts.key() != &unsafe { instruction.get_account_meta_at_unchecked(i + 5).key } {
-                return Err(ProgramError::InvalidAccountData);
-            }
+        let amounts: &[u64] = unsafe {
+            core::slice::from_raw_parts(
+                instruction_data.as_ptr() as *const u64,
+                instruction_data.len() / 8
+            )
+        };
+        
+        for (i, (loan_data, &amount)) in self.accounts.loan_data.iter().zip(amounts.iter()).enumerate() {  
+            let protocol_key = unsafe { instruction.get_account_meta_at_unchecked(4 + (i * 2)).key };
+            let borrower_key = unsafe { instruction.get_account_meta_at_unchecked(5 + (i * 2)).key };
+            
+            if loan_data.protocol_token_accounts.key() != &protocol_key ||
+                loan_data.borrower_token_accounts.key() != &borrower_key {
+                    return Err(ProgramError::InvalidAccountData);
+                }
 
-            if loan_data.borrower_token_accounts.key() != &unsafe { instruction.get_account_meta_at_unchecked(i + 5 + 1).key } {
-                return Err(ProgramError::InvalidAccountData);
-            }
-
-            let mut amount = u64::from_le_bytes(unsafe { *(instruction_data.as_ptr().add(i * 8) as *const [u8; 8]) });
-            amount = (amount as u128).checked_mul(FEE).ok_or(ProgramError::InvalidAccountData)?.checked_div(10_000).ok_or(ProgramError::InvalidAccountData)? as u64;
-
+            let fee = (amount as u128)
+                .checked_mul(FEE)
+                .and_then(|x| x.checked_div(10_000))
+                .ok_or(ProgramError::InvalidAccountData)? as u64;
+            
             Transfer {
                 from: loan_data.borrower_token_accounts,
                 to: loan_data.protocol_token_accounts,
                 authority: self.accounts.borrower,
-                amount,
+                amount: amount + fee,
             }.invoke()?;
         }
         
