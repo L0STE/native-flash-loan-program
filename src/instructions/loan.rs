@@ -22,10 +22,10 @@ use crate::{get_token_amount, LoanData, Repay, ID, MAX_LOAN_PAIRS};
 /// 1. fee: u64,                        // Fee to pay to the protocol
 /// 2..n. amount: u64,                  // Amount of token to loan
 pub struct LoanAccounts<'a> {
+    pub token_accounts: &'a [AccountInfo],
     pub borrower: &'a AccountInfo,
     pub protocol: &'a AccountInfo,
     pub loan: &'a AccountInfo,
-    pub token_accounts: &'a [AccountInfo],
     pub instruction_sysvar: &'a AccountInfo,
     pub token_program: &'a AccountInfo,
 }
@@ -74,7 +74,7 @@ impl<'a> TryFrom<&'a [u8]> for LoanInstructionData<'a> {
         // Get the amounts
         let amounts: &[u64] = unsafe {
             core::slice::from_raw_parts(
-                data.as_ptr().add(size_of::<u64>()) as *const u64,
+                data.as_ptr().add(size_of::<u16>()) as *const u64,
                 data.len() / size_of::<u64>()
             )
         };
@@ -128,8 +128,9 @@ impl<'a> Loan<'a> {
         let signer_seeds = [Signer::from(&signer_seeds)];
 
         // Get the loan account as mutable so we can push the Loan struct to it
-        let loan_data = self.accounts.loan.try_borrow_mut_data()?.as_ptr();
-
+        let loan_data = self.accounts.loan.try_borrow_mut_data()?;
+        let loan_ptr = loan_data.as_ptr() as *mut LoanData;
+        
         for (i, amount) in self.instruction_data.amounts.iter().enumerate() {
             let protocol_token_account = &self.accounts.token_accounts[i * 2];
             let borrower_token_account = &self.accounts.token_accounts[i * 2 + 1];
@@ -144,8 +145,8 @@ impl<'a> Loan<'a> {
 
             // Push the Loan struct to the loan account
             unsafe {
-                *(loan_data.add(i * size_of::<LoanData>()) as *mut LoanData) = LoanData {
-                    protocol_token_accounts: protocol_token_account,
+                *(loan_ptr.add(i)) = LoanData {
+                    protocol_token_account: *protocol_token_account.key(),
                     balance: balance_with_fee,
                 }
             }
