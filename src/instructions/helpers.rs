@@ -7,5 +7,9 @@ pub const FEE: u128 = 500;
 #[derive(Clone, Copy)]
 pub struct LoanData<'a> {
     pub protocol_token_accounts: &'a AccountInfo,
-    pub borrower_token_accounts: &'a AccountInfo,
+    pub balance: u64,
+}
+
+pub fn get_token_amount(data: &[u8]) -> u64 {
+    unsafe { *(data.as_ptr().add(64) as *const u64) }
 }
