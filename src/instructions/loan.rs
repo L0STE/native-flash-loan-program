@@ -1,10 +1,12 @@
 use pinocchio::instruction::{Seed, Signer};
-use pinocchio::pubkey::try_find_program_address;
 use pinocchio::sysvars::instructions::Instructions;
+use pinocchio::sysvars::rent::Rent;
+use pinocchio::sysvars::Sysvar;
 use pinocchio::{account_info::AccountInfo, program_error::ProgramError, ProgramResult};
+use pinocchio_system::instructions::CreateAccount;
 use pinocchio_token::instructions::Transfer;
 use core::mem::size_of;
-use crate::{get_token_amount, LoanData, Repay, ID, MAX_LOAN_PAIRS};
+use crate::{get_token_amount, LoanData, Repay, ID};
 
 /// #Loan
 /// 
@@ -22,24 +24,23 @@ use crate::{get_token_amount, LoanData, Repay, ID, MAX_LOAN_PAIRS};
 /// 1. fee: u64,                        // Fee to pay to the protocol
 /// 2..n. amount: u64,                  // Amount of token to loan
 pub struct LoanAccounts<'a> {
-    pub token_accounts: &'a [AccountInfo],
     pub borrower: &'a AccountInfo,
     pub protocol: &'a AccountInfo,
     pub loan: &'a AccountInfo,
     pub instruction_sysvar: &'a AccountInfo,
-    pub token_program: &'a AccountInfo,
+    pub token_accounts: &'a [AccountInfo],
 }
 
 impl<'a> TryFrom<&'a [AccountInfo]> for LoanAccounts<'a> {
     type Error = ProgramError;
 
     fn try_from(accounts: &'a [AccountInfo]) -> Result<Self, Self::Error> {
-        let [borrower, protocol, loan, instruction_sysvar, token_program, rest @ ..] = accounts else {
+        let [borrower, protocol, loan, instruction_sysvar, _token_program, _system_program, token_accounts @ ..] = accounts else {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
 
         // Verify that the number of token accounts is valid
-        if rest.len() % 2 != 0 || rest.len() / 2 > MAX_LOAN_PAIRS || rest.len() < 2 {
+        if token_accounts.len() % 2 != 0 || token_accounts.len() != 0 {
             return Err(ProgramError::InvalidAccountData);
         }
 
@@ -47,14 +48,14 @@ impl<'a> TryFrom<&'a [AccountInfo]> for LoanAccounts<'a> {
             borrower,
             protocol,
             loan,
-            token_accounts: rest,
             instruction_sysvar,
-            token_program,
+            token_accounts,
         })
     }
 }
 
 pub struct LoanInstructionData<'a> {
+    pub bump: [u8; 1],
     pub fee: u16,
     pub amounts: &'a [u64],
 }
@@ -63,30 +64,32 @@ impl<'a> TryFrom<&'a [u8]> for LoanInstructionData<'a> {
     type Error = ProgramError;
 
     fn try_from(data: &'a [u8]) -> Result<Self, Self::Error> {
-        // Verify that the data is valid
-        if data.len() < size_of::<u16>() + size_of::<u64>() || (data.len() - size_of::<u16>()) % size_of::<u64>() != 0 {
-            return Err(ProgramError::InvalidInstructionData);
-        }
+        // Get the bump
+        let (bump, data) = data.split_first().ok_or(ProgramError::InvalidInstructionData)?;
 
         // Get the fee
-        let fee = u16::from_le_bytes(unsafe { *(data.as_ptr() as *const [u8; 2]) });
+        let (fee, data) = data.split_at_checked(size_of::<u16>()).ok_or(ProgramError::InvalidInstructionData)?;
+
+        // Verify that the data is valid
+        if data.len() % size_of::<u64>() != 0 {
+            return Err(ProgramError::InvalidInstructionData);
+        }
 
         // Get the amounts
         let amounts: &[u64] = unsafe {
             core::slice::from_raw_parts(
-                data.as_ptr().add(size_of::<u16>()) as *const u64,
+                data.as_ptr() as *const u64,
                 data.len() / size_of::<u64>()
             )
         };
 
-        Ok(Self { fee, amounts })
+        Ok(Self { bump: [*bump], fee: u16::from_le_bytes(fee.try_into().map_err(|_| ProgramError::InvalidInstructionData)?), amounts })
     }
 }
 
 pub struct Loan<'a> {
     pub accounts: LoanAccounts<'a>,
     pub instruction_data: LoanInstructionData<'a>,
-    pub bump: [u8; 1],
 }
 
 impl<'a> TryFrom<(&'a [u8], &'a [AccountInfo])> for Loan<'a> {
@@ -101,13 +104,9 @@ impl<'a> TryFrom<(&'a [u8], &'a [AccountInfo])> for Loan<'a> {
             return Err(ProgramError::InvalidInstructionData);
         }
 
-        // Get the bump for the protocol account
-        let (_, bump) = try_find_program_address(&[b"protocol", &instruction_data.fee.to_le_bytes()], &ID).ok_or(ProgramError::InvalidAccountData)?;
-
         Ok(Self {
             accounts,
             instruction_data,
-            bump: [bump],
         })
     }
 }
@@ -123,13 +122,29 @@ impl<'a> Loan<'a> {
         let signer_seeds = [
             Seed::from("protocol".as_bytes()),
             Seed::from(&fee),
-            Seed::from(&self.bump),
+            Seed::from(&self.instruction_data.bump),
         ];
         let signer_seeds = [Signer::from(&signer_seeds)];
 
-        // Get the loan account as mutable so we can push the Loan struct to it
-        let loan_data = self.accounts.loan.try_borrow_mut_data()?;
-        let loan_ptr = loan_data.as_ptr() as *mut LoanData;
+        // Open the LoanData account and create a mutable slice to push the Loan struct to it
+        let size = size_of::<LoanData>() * self.instruction_data.amounts.len();
+        let lamports = Rent::get()?.minimum_balance(size);
+
+        CreateAccount {
+            from: self.accounts.borrower,
+            to: self.accounts.loan,
+            lamports,
+            space: size as u64,
+            owner: &ID,
+        }.invoke()?;
+
+        let mut loan_data = self.accounts.loan.try_borrow_mut_data()?;
+        let loan_entries = unsafe {
+            core::slice::from_raw_parts_mut(
+                loan_data.as_mut_ptr() as *mut LoanData,
+                self.instruction_data.amounts.len()
+            )
+        };
         
         for (i, amount) in self.instruction_data.amounts.iter().enumerate() {
             let protocol_token_account = &self.accounts.token_accounts[i * 2];
@@ -144,12 +159,10 @@ impl<'a> Loan<'a> {
             ).ok_or(ProgramError::InvalidInstructionData)?;
 
             // Push the Loan struct to the loan account
-            unsafe {
-                *(loan_ptr.add(i)) = LoanData {
-                    protocol_token_account: *protocol_token_account.key(),
-                    balance: balance_with_fee,
-                }
-            }
+            loan_entries[i] = LoanData {
+                protocol_token_account: *protocol_token_account.key(),
+                balance: balance_with_fee,
+            };
 
             // Transfer the tokens from the protocol to the borrower
             Transfer {
