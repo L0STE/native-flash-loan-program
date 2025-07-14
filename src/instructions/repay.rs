@@ -1,4 +1,4 @@
-use pinocchio::{account_info::AccountInfo, log::sol_log_64, program_error::ProgramError, ProgramResult};
+use pinocchio::{account_info::AccountInfo, program_error::ProgramError, ProgramResult};
 use crate::{get_token_amount, LoanData};
 
 /// #Repay
