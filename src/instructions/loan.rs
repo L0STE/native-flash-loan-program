@@ -45,6 +45,10 @@ impl<'a> TryFrom<&'a [AccountInfo]> for LoanAccounts<'a> {
             return Err(ProgramError::InvalidAccountData);
         }
 
+        if loan.try_borrow_data()?.len().ne(&0) {
+            return Err(ProgramError::InvalidAccountData);
+        }
+
         Ok(Self {
             borrower,
             protocol,

@@ -75,6 +75,14 @@ impl<'a> Repay<'a> {
                 return Err(ProgramError::InvalidAccountData);
             }
         }
+
+        // Close the loan account and give back the lamports to the borrower
+        unsafe {
+            *self.accounts.borrower.borrow_mut_lamports_unchecked() += *self.accounts.loan.borrow_lamports_unchecked();
+            *self.accounts.loan.borrow_mut_lamports_unchecked() = 0;
+
+            self.accounts.loan.close_unchecked();
+        }
         
         Ok(())
     }
