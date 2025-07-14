@@ -21,8 +21,9 @@ use crate::{get_token_amount, LoanData, Repay, ID};
 /// 5. token_program                    [executable]
 /// ..remaining accounts are token accounts from protocol and borrower
 /// Parameters:
-/// 1. fee: u64,                        // Fee to pay to the protocol
-/// 2..n. amount: u64,                  // Amount of token to loan
+/// 1. bump: u8,
+/// 2. fee: u16,                        // Fee to pay to the protocol
+/// 3..n. amount: u64,                  // Amount of token to loan
 pub struct LoanAccounts<'a> {
     pub borrower: &'a AccountInfo,
     pub protocol: &'a AccountInfo,
@@ -38,9 +39,9 @@ impl<'a> TryFrom<&'a [AccountInfo]> for LoanAccounts<'a> {
         let [borrower, protocol, loan, instruction_sysvar, _token_program, _system_program, token_accounts @ ..] = accounts else {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
-
+        
         // Verify that the number of token accounts is valid
-        if token_accounts.len() % 2 != 0 || token_accounts.len() != 0 {
+        if (token_accounts.len() % 2).ne(&0) || token_accounts.len().eq(&0) {
             return Err(ProgramError::InvalidAccountData);
         }
 
