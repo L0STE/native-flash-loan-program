@@ -1,6 +1,3 @@
-pub const MAX_LOAN_PAIRS: usize = 10;
-pub const FEE: u128 = 500;
-
 #[repr(C, packed)]
 pub struct LoanData {
     pub protocol_token_account: [u8; 32],

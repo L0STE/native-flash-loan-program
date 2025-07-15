@@ -9,7 +9,6 @@ use crate::{get_token_amount, LoanData};
 /// 
 /// 1. borrower:                        [signer, mut]
 /// 2. loan:
-/// 3. token_program:
 /// 4. ..remaining accounts are token accounts from protocol
 pub struct RepayAccounts<'a> {
     pub borrower: &'a AccountInfo,
@@ -21,7 +20,7 @@ impl<'a> TryFrom<&'a [AccountInfo]> for RepayAccounts<'a> {
     type Error = ProgramError;
 
     fn try_from(accounts: &'a [AccountInfo]) -> Result<Self, Self::Error> {
-        let [borrower, loan, _token_program, token_accounts @ ..] = accounts else {
+        let [borrower, loan, token_accounts @ ..] = accounts else {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
 
