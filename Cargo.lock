@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "blueshift-native-escrow"
+name = "blueshift-native-flashloan"
 version = "0.1.0"
 dependencies = [
  "pinocchio 0.8.4",

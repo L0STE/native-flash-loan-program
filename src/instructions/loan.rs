@@ -45,8 +45,20 @@ impl<'a> TryFrom<&'a [AccountInfo]> for LoanAccounts<'a> {
             return Err(ProgramError::InvalidAccountData);
         }
 
+        // Check that the loan account is empty
         if loan.try_borrow_data()?.len().ne(&0) {
             return Err(ProgramError::InvalidAccountData);
+        }
+
+        // Check duplicate token accounts
+        let num_pairs = token_accounts.len() / 2;
+        for i in 0..num_pairs - 1 {
+            let key_i = token_accounts[i * 2].key();
+            for key_j in token_accounts[(i + 1) * 2..].iter().step_by(2).map(|acc| acc.key()) {
+                if key_i == key_j {
+                    return Err(ProgramError::InvalidAccountData);
+                }
+            }
         }
 
         Ok(Self {
